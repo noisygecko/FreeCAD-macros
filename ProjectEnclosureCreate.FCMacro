@@ -1,0 +1,6 @@
+import ProjectEnclosure
+
+if __name__ == "__main__":
+
+    ProjectEnclosure.makeBoxEnclosure()
+    FreeCADGui.ActiveDocument.ActiveView.fitAll()
