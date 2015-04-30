@@ -1,4 +1,6 @@
 from __future__ import division # allows floating point division from integers
+
+import FreeCAD
 from FreeCAD import Base
 import Part
 import math
@@ -55,8 +57,15 @@ class BoxEnclosure:
         obj.addProperty("App::PropertyBool","LidFlip","BoxLid","Whether to place the lid with the top facing down or not.\nDoes not affect the part shape at all").LidFlip = LidFlip
         obj.addProperty("App::PropertyLength","LipHeight","BoxLid","Height of lip on the underside of the lid.\nSits inside the box body for a snug fit.").LipHeight = LipHeight
 
+        self.setOldValues(obj)
+        obj.Proxy = self
+
+    def setOldValues(self, obj):
+        
+        global oldValues
+        
         # used in error handling, to revert to last good value upon error
-        self.oldValues = { 
+        oldValues = { 
             "OuterWidth": obj.OuterWidth,
             "OuterLength": obj.OuterLength,
             "OuterHeight": obj.OuterHeight,
@@ -77,50 +86,63 @@ class BoxEnclosure:
             "LipHeight": obj.LipHeight,
         }
         
-        obj.Proxy = self
+        print oldValues
+
 
     def onChanged(self, fp, prop):
         "Do something when a property has changed"
+        
+        global oldValues
+        
         print "%s changed" % prop
-        if prop == "InnerWidth":
-            self.updateProperty(fp, "OuterWidth", fp.InnerWidth + 2 * fp.Thickness)
-        elif prop == "InnerLength":
-            self.updateProperty(fp, "OuterLength", fp.InnerLength + 2 * fp.Thickness)
-        elif prop == "InnerHeight":
-            self.updateProperty(fp, "OuterHeight", fp.InnerHeight + 2 * fp.Thickness)
-        elif prop == "OuterWidth":
-            self.updateProperty(fp, "InnerWidth", fp.OuterWidth - 2 * fp.Thickness)
-        elif prop == "OuterLength":
-            self.updateProperty(fp, "InnerLength", fp.OuterLength - 2 * fp.Thickness)
-        elif prop == "OuterHeight":
-            self.updateProperty(fp, "InnerHeight", fp.OuterHeight - 2 * fp.Thickness)
-        elif prop == "BoreDepth":
-            if fp.BoreDepth >= fp.Thickness:
-                fp.BoreDepth = self.oldValues[prop]
-                raise ValueError("Bore Depth must be less than Thickness" % prop)
-        elif prop == "ScrewpostID":
-            if fp.ScrewpostID >= fp.ScrewpostOD:
-                fp.ScrewpostID = self.oldValues[prop]
-                raise ValueError("Screwpost ID must be less than Screwpost OD" % prop)
-        elif prop == "ScrewpostOD":
-            if fp.ScrewpostOD <= fp.ScrewpostID:
-                fp.ScrewpostOD = self.oldValues[prop]
-                raise ValueError("Screwpost OD must be greater than Screwpost ID" % prop)
-        elif prop == "Thickness":
-            if fp.Thickness <= 0:
-                fp.Thickness = self.oldValues[prop]
-                raise ValueError("%s must be > 0" % prop)
-            elif fp.Thickness <= fp.BoreDepth:
-                fp.Thickness = self.oldValues[prop]
-                raise ValueError("Thickness must be greater than Bore Depth " % prop)
-            self.updateProperty(fp, "OuterWidth", fp.InnerWidth + 2 * fp.Thickness)
-            self.updateProperty(fp, "OuterLength", fp.InnerLength + 2 * fp.Thickness)
-            self.updateProperty(fp, "OuterHeight", fp.InnerHeight + 2 * fp.Thickness)
-                
-        elif prop == "Shape":
-            for k in self.oldValues.keys():
-                self.oldValues[k] = getattr(fp, k)
-        print self.oldValues
+
+        # It is assumed that on first round when setting the
+        # parameters, that no errors will occur since 'oldValues'
+        # has not been set, so there are no fallback values.
+        try:
+            if prop == "InnerWidth":
+                self.updateProperty(fp, "OuterWidth", fp.InnerWidth + 2 * fp.Thickness)
+            elif prop == "InnerLength":
+                self.updateProperty(fp, "OuterLength", fp.InnerLength + 2 * fp.Thickness)
+            elif prop == "InnerHeight":
+                self.updateProperty(fp, "OuterHeight", fp.InnerHeight + 2 * fp.Thickness)
+            elif prop == "OuterWidth":
+                self.updateProperty(fp, "InnerWidth", fp.OuterWidth - 2 * fp.Thickness)
+            elif prop == "OuterLength":
+                self.updateProperty(fp, "InnerLength", fp.OuterLength - 2 * fp.Thickness)
+            elif prop == "OuterHeight":
+                self.updateProperty(fp, "InnerHeight", fp.OuterHeight - 2 * fp.Thickness)
+            elif prop == "BoreDepth":
+                if fp.BoreDepth >= fp.Thickness:
+                    fp.BoreDepth = oldValues[prop]
+                    raise ValueError("Bore Depth must be less than Thickness" % prop)
+            elif prop == "ScrewpostID":
+                if fp.ScrewpostID >= fp.ScrewpostOD:
+                    fp.ScrewpostID = oldValues[prop]
+                    raise ValueError("Screwpost ID must be less than Screwpost OD" % prop)
+            elif prop == "ScrewpostOD":
+                if fp.ScrewpostOD <= fp.ScrewpostID:
+                    fp.ScrewpostOD = oldValues[prop]
+                    raise ValueError("Screwpost OD must be greater than Screwpost ID" % prop)
+            elif prop == "Thickness":
+                if fp.Thickness <= 0:
+                    fp.Thickness = oldValues[prop]
+                    raise ValueError("%s must be > 0" % prop)
+                elif fp.Thickness <= fp.BoreDepth:
+                    fp.Thickness = oldValues[prop]
+                    raise ValueError("Thickness must be greater than Bore Depth " % prop)
+                self.updateProperty(fp, "OuterWidth", fp.InnerWidth + 2 * fp.Thickness)
+                self.updateProperty(fp, "OuterLength", fp.InnerLength + 2 * fp.Thickness)
+                self.updateProperty(fp, "OuterHeight", fp.InnerHeight + 2 * fp.Thickness)
+                    
+            elif prop == "Shape":
+                self.setOldValues(fp)
+        except AttributeError as e:
+            # This should only occur on first round setting the parameters
+            # when they are done sequentially.  Probably should be changed
+            # in the FreeCAD core code.
+            print 'onChanged AttributeError: ' + str(e)            
+
 
     def updateProperty(self, fp, prop, value):
         epsilon = 0.0001
@@ -128,6 +150,13 @@ class BoxEnclosure:
             setattr(fp, prop, value)
 
     def execute(self, fp):
+    
+        print 'execute()'
+    
+        global oldValues
+        if not 'oldValues' in globals():
+            self.setOldValues(fp)
+    
         box = Part.makeBox(fp.OuterWidth, fp.OuterLength, fp.OuterHeight + fp.LipHeight)
         hollow = Part.makeBox(fp.InnerWidth, fp.InnerLength, fp.InnerHeight, Base.Vector(fp.Thickness, fp.Thickness, fp.Thickness))
         if fp.SideRadius > fp.TopAndBottomRadius:
@@ -152,7 +181,7 @@ class BoxEnclosure:
         
         box = self.addStandoffs(box, fp.OuterHeight + fp.LipHeight - fp.Thickness, fp.ScrewpostID, fp.ScrewpostOD, points)    
         
-        (body, lid) = self.cleaveZ(box, fp.OuterHeight - fp.Thickness)
+        (body, lid) = self.cleaveZ(box, float(fp.OuterHeight - fp.Thickness))
         
         # create lip on lid
         lid.translate(Base.Vector(0, 0, -fp.LipHeight))
@@ -192,7 +221,7 @@ class BoxEnclosure:
         if boreDepth < 0:
             boreDepth = 0
         r = diameter / 2.0
-        h = r / math.tan(math.radians(angle / 2.0))
+        h = r / math.tan(math.radians(float(angle) / 2.0))
         for point in points:
             if type(point) is tuple or type(point) is list:
                 point = Base.Vector(point[0], point[1], point[2])
@@ -234,14 +263,15 @@ class BoxEnclosure:
 
 
 def makeBoxEnclosure():
-    if FreeCAD.ActiveDocument is None:
-        App.newDocument()
+    FreeCAD.newDocument()
     a=FreeCAD.ActiveDocument.addObject("Part::FeaturePython","BoxEnclosure")
     BoxEnclosure(a)
     a.ViewObject.Proxy=0 # just set it to something different from None (this assignment is needed to run an internal notification)
     FreeCAD.ActiveDocument.recompute()
-    FreeCADGui.ActiveDocument.ActiveView.fitAll()
     return a
 
 if __name__ == "__main__":
+
+    __name__ = 'ProjectEnclosure'
     makeBoxEnclosure()
+    FreeCADGui.ActiveDocument.ActiveView.fitAll()
